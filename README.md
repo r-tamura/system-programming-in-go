@@ -1,4 +1,4 @@
-# system-programming-in-go
+# System Programming in Golang
 「Goならわかるシステムプログラミング」写経レポジトリ
 
 
