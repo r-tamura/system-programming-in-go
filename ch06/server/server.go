@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"time"
 )
 
 var (
@@ -31,25 +33,43 @@ func main() {
 		go func() {
 			fmt.Printf("Accept %v\n", connection.RemoteAddr())
 
-			// Read the request
-			request, err := http.ReadRequest(bufio.NewReader(connection))
-			if err != nil {
-				panic(err)
-			}
+			// To loop for responding all time after acceptance
+			for {
+				// Setup time out settings
+				connection.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-			// デバッグ 第二引数をtrueにすることでbodyもダンプする
-			dump, err := httputil.DumpRequest(request, true)
-			if err != nil {
-				panic(err)
+				// Read the request
+				request, err := http.ReadRequest(bufio.NewReader(connection))
+				if err != nil {
+					// When time out or socket is closed, this program will exit,
+					// otherwise throws an error.
+					neterr, ok := err.(net.Error) // down cast
+					if ok && neterr.Timeout() {
+						fmt.Println("Timeout")
+						break
+					} else if err == io.EOF {
+						break
+					}
+					panic(err)
+				}
+
+				// デバッグ 第二引数をtrueにすることでbodyもダンプする
+				dump, err := httputil.DumpRequest(request, true)
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println(string(dump))
+
+				content := "Hello, Golang\n"
+				response := http.Response{
+					StatusCode:    200,
+					ProtoMajor:    1,
+					ProtoMinor:    1,
+					ContentLength: int64(len(content)),
+					Body:          ioutil.NopCloser(strings.NewReader(content)),
+				}
+				response.Write(connection)
 			}
-			fmt.Println(string(dump))
-			response := http.Response{
-				StatusCode: 200,
-				ProtoMajor: 1,
-				ProtoMinor: 0,
-				Body:       ioutil.NopCloser(strings.NewReader("Hello, Golang\n")),
-			}
-			response.Write(connection)
 			connection.Close()
 		}()
 	}
