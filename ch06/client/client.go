@@ -2,20 +2,19 @@ package main
 
 import (
 	"bufio"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"os"
+	"strconv"
 	"strings"
 )
 
 func main() {
 
 	sendMessages := []string{
-		"ASCII", "PROGRAMMING", "PLUS",
+		"ASCII",
 	}
 
 	current := 0
@@ -39,7 +38,12 @@ func main() {
 		}
 		request.Header.Set("Accept-Encoding", "gzip")
 
-		request.Write(connection)
+		err = request.Write(connection)
+		if err != nil {
+			panic(err)
+		}
+		reader := bufio.NewReader(connection)
+
 		response, err := http.ReadResponse(bufio.NewReader(connection), request)
 		if err != nil {
 			fmt.Println("Retry")
@@ -52,16 +56,33 @@ func main() {
 			panic(err)
 		}
 		fmt.Println(string(dump))
-		defer response.Body.Close()
 
-		if response.Header.Get("Content-Encoding") == "gzip" {
-			reader, err := gzip.NewReader(response.Body)
+		// Chunked response
+		if len(response.TransferEncoding) < 1 || response.TransferEncoding[0] != "chunked" {
+			panic("Wrng transfer encoding")
+		}
+
+		for {
+			// Get the size of a chunk
+			sizeStr, err := reader.ReadBytes([]byte("\n")[0])
+			if err == io.EOF {
+				break
+			}
+			// Parse the size in hex. If the size is 0, close.
+			size, err := strconv.ParseInt(string(sizeStr[:len(sizeStr)-2]), 16, 64)
+			if size == 0 {
+				break
+			}
 			if err != nil {
 				panic(err)
 			}
-			io.Copy(os.Stdout, reader)
-		} else {
-			io.Copy(os.Stdout, response.Body)
+
+			// Allocate memory only the size
+			line := make([]byte, int(size))
+			reader.Read(line)
+			// 2続く改行コードの2つ目をスキップする
+			reader.Discard(2)
+			fmt.Printf("  %d bytes: %s\n", size, string(line))
 		}
 
 		// If all request is sent, exit

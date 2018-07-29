@@ -2,17 +2,23 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"strings"
 	"time"
 )
+
+var contents = []string{
+	"Lorem Ipsum is simply dummy text of the printing and typesetting industry.",
+	"Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, ",
+	"when an unknown printer took a galley of type and scrambled it to make a type specimen book.",
+	"It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged.",
+	"It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, ",
+	"and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.",
+}
 
 func isGZipAcceptable(request *http.Request) bool {
 	return strings.Index(strings.Join(request.Header["Accept-Encoding"], ","), "gzip") != -1
@@ -48,34 +54,21 @@ func processSession(connection net.Conn) {
 		}
 		fmt.Println(string(dump))
 
-		content := "Hello, Golang\n"
-		response := http.Response{
-			StatusCode:    200,
-			ProtoMajor:    1,
-			ProtoMinor:    1,
-			ContentLength: int64(len(content)),
-			Header:        make(http.Header),
+		fmt.Fprint(connection, strings.Join([]string{
+			"HTTP/1.1 200 OK",
+			"Centent-Type: text/plain",
+			"Transfer-Encoding: chunked",
+			"", "",
+		}, "\r\n"))
+
+		// Write response body
+		for _, content := range contents {
+			bytes := []byte(content)
+			fmt.Fprintf(connection, "%x\r\n%s\r\n", len(bytes), content)
 		}
 
-		// GZip or raw
-		if isGZipAcceptable(request) {
-			content := "<h1>Hello, Golang<span>(gzipped)</span></h1>"
-			// Respond with the gzipped content
-			var buffer bytes.Buffer
-			writer := gzip.NewWriter(&buffer)
-			io.WriteString(writer, content)
-			writer.Close()
-			response.Body = ioutil.NopCloser(&buffer)
-			response.ContentLength = int64(buffer.Len())
-			response.Header.Set("Content-Encoding", "gzip")
-		} else {
-			content := "<h1>Hello, Golang</h1>\n"
-			response.Body = ioutil.NopCloser(strings.NewReader(content))
-		}
-
-		response.Write(connection)
+		fmt.Fprintf(connection, "0\r\n\r\n")
 	}
-	connection.Close()
 }
 
 var (
